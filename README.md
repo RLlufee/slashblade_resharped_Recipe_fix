@@ -1,0 +1,2 @@
+# slashblade_resharped_Recipe_fix
+起因是因为重锋有个使用JEI看合成表，但如果是同属于slashblade：slashblade的就会检测不出来，我向牢政反馈过后，显示已完成，结果还是有，于是一怒之下自己写了一个补丁，后面希望重锋本体给它并入一下
