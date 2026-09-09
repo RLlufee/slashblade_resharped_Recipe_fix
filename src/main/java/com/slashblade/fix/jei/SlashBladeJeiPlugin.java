@@ -3,31 +3,36 @@ package com.slashblade.fix.jei;
 import mezz.jei.api.IModPlugin;
 import mezz.jei.api.JeiPlugin;
 import mezz.jei.api.constants.VanillaTypes;
-import mezz.jei.api.ingredients.subtypes.UidContext;
 import mezz.jei.api.registration.IRecipeRegistration;
 import mezz.jei.api.registration.ISubtypeRegistration;
 import mezz.jei.api.registration.IVanillaCategoryExtensionRegistration;
 import mezz.jei.api.runtime.IJeiRuntime;
 import mods.flammpfeil.slashblade.SlashBlade;
+import mods.flammpfeil.slashblade.capability.slashblade.BladeStateAccess;
 import mods.flammpfeil.slashblade.capability.slashblade.ISlashBladeState;
 import mods.flammpfeil.slashblade.item.ItemSlashBlade;
 import mods.flammpfeil.slashblade.recipe.SlashBladeShapedRecipe;
+import mods.flammpfeil.slashblade.registry.SlashBladeItems;
 import mods.flammpfeil.slashblade.registry.slashblade.SlashBladeDefinition;
 import net.minecraft.client.Minecraft;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraftforge.registries.ForgeRegistries;
 import org.jetbrains.annotations.NotNull;
+import com.slashblade.fix.SlashBladeResharpedRecipeFix;
 
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * 拔刀剑 JEI 插件 (1.21.1 NeoForge)
+ */
 @JeiPlugin
-@SuppressWarnings("removal")
 public class SlashBladeJeiPlugin implements IModPlugin {
 
-    public static final ResourceLocation PLUGIN_UID = new ResourceLocation("slashblade_resharped_fix", "jei_plugin");
+    public static final ResourceLocation PLUGIN_UID =
+            ResourceLocation.fromNamespaceAndPath(SlashBladeResharpedRecipeFix.MODID, "jei_plugin");
 
     @Override
     public @NotNull ResourceLocation getPluginUid() {
@@ -36,19 +41,11 @@ public class SlashBladeJeiPlugin implements IModPlugin {
 
     @Override
     public void registerItemSubtypes(ISubtypeRegistration registration) {
-        for (Item item : ForgeRegistries.ITEMS) {
-            if (item instanceof ItemSlashBlade && item != mods.flammpfeil.slashblade.registry.SlashBladeItems.SLASHBLADE.get()) {
+        Item defaultBlade = SlashBladeItems.SLASHBLADE.get();
+        for (Item item : BuiltInRegistries.ITEM) {
+            if (item instanceof ItemSlashBlade && item != defaultBlade) {
                 try {
-                    registration.registerSubtypeInterpreter(item, (stack, context) -> {
-                        stack.getCapability(ItemSlashBlade.BLADESTATE).ifPresent(cap -> {
-                            if (stack.hasTag() && stack.getOrCreateTag().contains("bladeState")) {
-                                cap.deserializeNBT(stack.getOrCreateTag().getCompound("bladeState"));
-                            }
-                        });
-                        return stack.getCapability(ItemSlashBlade.BLADESTATE)
-                                .map(ISlashBladeState::getTranslationKey)
-                                .orElse("");
-                    });
+                    registration.registerSubtypeInterpreter(item, mods.flammpfeil.slashblade.compat.jei.SlashBladeSubtypeInterpreter.INSTANCE);
                 } catch (Throwable ignored) {
                 }
             }
@@ -57,9 +54,9 @@ public class SlashBladeJeiPlugin implements IModPlugin {
 
     @Override
     public void registerVanillaCategoryExtensions(IVanillaCategoryExtensionRegistration registration) {
-        registration.getCraftingCategory().addCategoryExtension(
+        registration.getCraftingCategory().addExtension(
                 SlashBladeShapedRecipe.class,
-                SlashBladeCraftingCategoryExtension::new
+                SlashBladeCraftingCategoryExtension.INSTANCE
         );
     }
 
@@ -80,13 +77,8 @@ public class SlashBladeJeiPlugin implements IModPlugin {
             registry.listElements().sorted(SlashBladeDefinition.COMPARATOR).forEach(holder -> {
                 SlashBladeDefinition definition = holder.value();
                 try {
-                    ItemStack blade = definition.getBlade();
+                    ItemStack blade = definition.getBlade(mc.getConnection().registryAccess());
                     if (!blade.isEmpty()) {
-                        blade.getCapability(ItemSlashBlade.BLADESTATE).ifPresent(cap -> {
-                            if (blade.hasTag() && blade.getOrCreateTag().contains("bladeState")) {
-                                cap.deserializeNBT(blade.getOrCreateTag().getCompound("bladeState"));
-                            }
-                        });
                         bladesToAdd.add(blade);
                     }
                 } catch (Exception ignored) {

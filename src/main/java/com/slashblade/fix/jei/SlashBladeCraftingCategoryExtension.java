@@ -1,14 +1,12 @@
 package com.slashblade.fix.jei;
 
-import mezz.jei.api.constants.VanillaTypes;
 import mezz.jei.api.gui.builder.IRecipeLayoutBuilder;
 import mezz.jei.api.gui.builder.IRecipeSlotBuilder;
 import mezz.jei.api.gui.ingredient.ICraftingGridHelper;
 import mezz.jei.api.recipe.IFocusGroup;
 import mezz.jei.api.recipe.category.extensions.vanilla.crafting.ICraftingCategoryExtension;
 import mods.flammpfeil.slashblade.SlashBlade;
-import mods.flammpfeil.slashblade.capability.slashblade.ISlashBladeState;
-import mods.flammpfeil.slashblade.item.ItemSlashBlade;
+import mods.flammpfeil.slashblade.capability.slashblade.BladeStateAccess;
 import mods.flammpfeil.slashblade.item.SwordType;
 import mods.flammpfeil.slashblade.recipe.RequestDefinition;
 import mods.flammpfeil.slashblade.recipe.SlashBladeIngredient;
@@ -19,15 +17,16 @@ import mods.flammpfeil.slashblade.registry.slashblade.SlashBladeDefinition;
 import net.minecraft.ChatFormatting;
 import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
-import net.minecraft.core.RegistryAccess;
-import net.minecraft.nbt.CompoundTag;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Ingredient;
+import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.item.enchantment.Enchantment;
-import net.minecraftforge.registries.ForgeRegistries;
 import org.jetbrains.annotations.Nullable;
 
 import java.lang.reflect.Field;
@@ -36,9 +35,13 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
-public class SlashBladeCraftingCategoryExtension implements ICraftingCategoryExtension {
+/**
+ * 拔刀剑工作台配方 JEI 分类扩展 (1.21.1 NeoForge)
+ */
+public class SlashBladeCraftingCategoryExtension implements ICraftingCategoryExtension<SlashBladeShapedRecipe> {
 
-    private final SlashBladeShapedRecipe recipe;
+    public static final SlashBladeCraftingCategoryExtension INSTANCE = new SlashBladeCraftingCategoryExtension();
+
     private static Field requestField = null;
 
     static {
@@ -49,17 +52,17 @@ public class SlashBladeCraftingCategoryExtension implements ICraftingCategoryExt
         }
     }
 
-    public SlashBladeCraftingCategoryExtension(SlashBladeShapedRecipe recipe) {
-        this.recipe = recipe;
+    private SlashBladeCraftingCategoryExtension() {
     }
 
     @Override
-    public void setRecipe(IRecipeLayoutBuilder builder, ICraftingGridHelper craftingGridHelper, IFocusGroup focuses) {
-        ItemStack outputStack = getOutputStack();
+    public void setRecipe(RecipeHolder<SlashBladeShapedRecipe> recipeHolder, IRecipeLayoutBuilder builder, ICraftingGridHelper craftingGridHelper, IFocusGroup focuses) {
+        SlashBladeShapedRecipe recipe = recipeHolder.value();
+        ItemStack outputStack = getOutputStack(recipe);
         craftingGridHelper.createAndSetOutputs(builder, List.of(outputStack));
 
-        int width = getWidth();
-        int height = getHeight();
+        int width = getWidth(recipeHolder);
+        int height = getHeight(recipeHolder);
         if (width <= 0 || height <= 0) {
             builder.setShapeless();
             width = height = (int) Math.ceil(Math.sqrt(recipe.getIngredients().size()));
@@ -76,10 +79,11 @@ public class SlashBladeCraftingCategoryExtension implements ICraftingCategoryExt
                 continue;
             }
 
-            if (ingredient instanceof SlashBladeIngredient bladeIngredient) {
+            SlashBladeIngredient bladeIngredient = extractSlashBladeIngredient(ingredient);
+            if (bladeIngredient != null) {
                 RequestDefinition req = getRequest(bladeIngredient);
                 requests.add(req);
-                inputItemsList.add(getBladeDisplayStacks(bladeIngredient, req));
+                inputItemsList.add(getBladeDisplayStacks(ingredient, bladeIngredient, req));
             } else {
                 requests.add(null);
                 ItemStack[] items = ingredient.getItems();
@@ -107,14 +111,23 @@ public class SlashBladeCraftingCategoryExtension implements ICraftingCategoryExt
         }
     }
 
-    public ItemStack getOutputStack() {
+    public ItemStack getOutputStack(SlashBladeShapedRecipe recipe) {
         ResourceLocation outputBlade = recipe.getOutputBlade();
         if (outputBlade == null) {
-            return recipe.getResultItem(RegistryAccess.EMPTY);
+            Minecraft mc = Minecraft.getInstance();
+            HolderLookup.Provider access = mc.level != null ? mc.level.registryAccess() :
+                    (mc.getConnection() != null ? mc.getConnection().registryAccess() : null);
+            if (access != null) {
+                try {
+                    return recipe.getResultItem(access);
+                } catch (Exception ignored) {
+                }
+            }
+            return recipe.getResultStack().copy();
         }
 
-        if (ForgeRegistries.ITEMS.containsKey(outputBlade)) {
-            Item item = ForgeRegistries.ITEMS.getValue(outputBlade);
+        if (BuiltInRegistries.ITEM.containsKey(outputBlade)) {
+            Item item = BuiltInRegistries.ITEM.get(outputBlade);
             if (item != null) {
                 return new ItemStack(item);
             }
@@ -134,20 +147,15 @@ public class SlashBladeCraftingCategoryExtension implements ICraftingCategoryExt
         }
         try {
             Minecraft mc = Minecraft.getInstance();
-            RegistryAccess access = null;
-            if (mc.level != null) {
-                access = mc.level.registryAccess();
-            } else if (mc.getConnection() != null) {
-                access = mc.getConnection().registryAccess();
-            }
+            HolderLookup.Provider access = mc.level != null ? mc.level.registryAccess() :
+                    (mc.getConnection() != null ? mc.getConnection().registryAccess() : null);
             if (access != null) {
-                var reg = access.registry(SlashBladeDefinition.REGISTRY_KEY);
+                var reg = access.lookup(SlashBladeDefinition.REGISTRY_KEY);
                 if (reg.isPresent()) {
-                    SlashBladeDefinition def = reg.get().get(bladeName);
-                    if (def != null) {
-                        ItemStack blade = def.getBlade();
+                    var holder = reg.get().get(ResourceKey.create(SlashBladeDefinition.REGISTRY_KEY, bladeName));
+                    if (holder.isPresent()) {
+                        ItemStack blade = holder.get().value().getBlade(access);
                         if (!blade.isEmpty()) {
-                            syncCapFromNbt(blade);
                             return blade;
                         }
                     }
@@ -160,20 +168,23 @@ public class SlashBladeCraftingCategoryExtension implements ICraftingCategoryExt
 
     public static ItemStack createFallbackBlade(ResourceLocation bladeName) {
         ItemStack blade = new ItemStack(SlashBladeItems.SLASHBLADE.get());
-        String translationKey = Util.makeDescriptionId("item", bladeName);
-        CompoundTag tag = blade.getOrCreateTagElement("bladeState");
-        tag.putString("translationKey", translationKey);
-        tag.putBoolean("isNonEmpty", true);
-        syncCapFromNbt(blade);
+        BladeStateAccess.of(blade).ifPresent(state -> {
+            state.setNonEmpty();
+            state.setTranslationKey(Util.makeDescriptionId("item", bladeName));
+        });
         return blade;
     }
 
-    private static void syncCapFromNbt(ItemStack blade) {
-        blade.getCapability(ItemSlashBlade.BLADESTATE).ifPresent(cap -> {
-            if (blade.hasTag() && blade.getOrCreateTag().contains("bladeState")) {
-                cap.deserializeNBT(blade.getOrCreateTag().getCompound("bladeState"));
+    @Nullable
+    private SlashBladeIngredient extractSlashBladeIngredient(Ingredient ingredient) {
+        try {
+            var custom = ingredient.getCustomIngredient();
+            if (custom instanceof SlashBladeIngredient sb) {
+                return sb;
             }
-        });
+        } catch (Throwable ignored) {
+        }
+        return null;
     }
 
     @Nullable
@@ -187,7 +198,7 @@ public class SlashBladeCraftingCategoryExtension implements ICraftingCategoryExt
         return null;
     }
 
-    private List<ItemStack> getBladeDisplayStacks(SlashBladeIngredient ingredient, @Nullable RequestDefinition req) {
+    private List<ItemStack> getBladeDisplayStacks(Ingredient original, SlashBladeIngredient ingredient, @Nullable RequestDefinition req) {
         List<ItemStack> list = new ArrayList<>();
         if (req != null && req.name() != null && !req.name().equals(SlashBlade.prefix("none"))) {
             ItemStack stack = getBladeFromRegistry(req.name());
@@ -195,17 +206,14 @@ public class SlashBladeCraftingCategoryExtension implements ICraftingCategoryExt
                 stack = createFallbackBlade(req.name());
             }
             req.initItemStack(stack);
-            syncCapFromNbt(stack);
             list.add(stack);
         }
 
         if (list.isEmpty()) {
-            ItemStack[] items = ingredient.getItems();
+            ItemStack[] items = original.getItems();
             if (items.length > 0) {
                 for (ItemStack item : items) {
-                    ItemStack copy = item.copy();
-                    syncCapFromNbt(copy);
-                    list.add(copy);
+                    list.add(item.copy());
                 }
             } else {
                 list.add(new ItemStack(SlashBladeItems.SLASHBLADE.get()));
@@ -217,26 +225,30 @@ public class SlashBladeCraftingCategoryExtension implements ICraftingCategoryExt
     private void attachRequestTooltip(IRecipeSlotBuilder slot, RequestDefinition request) {
         slot.addRichTooltipCallback((recipeSlotView, tooltip) -> {
             if (request.killCount() > 0) {
-                tooltip.add(Component.translatable("slashblade_resharped_fix.jei.req_kill", request.killCount())
+                tooltip.add(Component.translatable("slashblade_resharped_recipe_fix.jei.req_kill", request.killCount())
                         .withStyle(ChatFormatting.RED));
             }
             if (request.proudSoulCount() > 0) {
-                tooltip.add(Component.translatable("slashblade_resharped_fix.jei.req_proud_soul", request.proudSoulCount())
+                tooltip.add(Component.translatable("slashblade_resharped_recipe_fix.jei.req_proud_soul", request.proudSoulCount())
                         .withStyle(ChatFormatting.LIGHT_PURPLE));
             }
             if (request.refineCount() > 0) {
-                tooltip.add(Component.translatable("slashblade_resharped_fix.jei.req_refine", request.refineCount())
+                tooltip.add(Component.translatable("slashblade_resharped_recipe_fix.jei.req_refine", request.refineCount())
                         .withStyle(ChatFormatting.AQUA));
             }
             for (EnchantmentDefinition enchDef : request.enchantments()) {
-                Enchantment ench = ForgeRegistries.ENCHANTMENTS.getValue(enchDef.getEnchantmentID());
-                if (ench != null) {
-                    tooltip.add(Component.translatable("slashblade_resharped_fix.jei.req_enchantment", ench.getFullname(enchDef.getEnchantmentLevel()))
+                try {
+                    tooltip.add(Component.translatable("slashblade_resharped_recipe_fix.jei.req_enchantment",
+                            Enchantment.getFullname(enchDef.getEnchantment(), enchDef.getEnchantmentLevel()))
+                            .withStyle(ChatFormatting.YELLOW));
+                } catch (Throwable t) {
+                    tooltip.add(Component.translatable("slashblade_resharped_recipe_fix.jei.req_enchantment",
+                            enchDef.getEnchantment().getRegisteredName() + " " + enchDef.getEnchantmentLevel())
                             .withStyle(ChatFormatting.YELLOW));
                 }
             }
             for (SwordType type : request.defaultType()) {
-                tooltip.add(Component.translatable("slashblade_resharped_fix.jei.req_sword_type", type.name())
+                tooltip.add(Component.translatable("slashblade_resharped_recipe_fix.jei.req_sword_type", type.name())
                         .withStyle(ChatFormatting.GOLD));
             }
         });
@@ -270,19 +282,13 @@ public class SlashBladeCraftingCategoryExtension implements ICraftingCategoryExt
         return index;
     }
 
-    @Nullable
     @Override
-    public ResourceLocation getRegistryName() {
-        return recipe.getId();
+    public int getWidth(RecipeHolder<SlashBladeShapedRecipe> recipeHolder) {
+        return recipeHolder.value().getWidth();
     }
 
     @Override
-    public int getWidth() {
-        return recipe.getWidth();
-    }
-
-    @Override
-    public int getHeight() {
-        return recipe.getHeight();
+    public int getHeight(RecipeHolder<SlashBladeShapedRecipe> recipeHolder) {
+        return recipeHolder.value().getHeight();
     }
 }
