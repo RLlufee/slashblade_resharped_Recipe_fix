@@ -1,5 +1,6 @@
 package com.slashblade.fix.jei;
 
+import com.slashblade.fix.SlashBladeResharpedFix;
 import mezz.jei.api.IModPlugin;
 import mezz.jei.api.JeiPlugin;
 import mezz.jei.api.constants.VanillaTypes;
@@ -27,7 +28,7 @@ import java.util.List;
 @SuppressWarnings("removal")
 public class SlashBladeJeiPlugin implements IModPlugin {
 
-    public static final ResourceLocation PLUGIN_UID = new ResourceLocation("slashblade_resharped_fix", "jei_plugin");
+    public static final ResourceLocation PLUGIN_UID = new ResourceLocation(SlashBladeResharpedFix.MODID, "jei_plugin");
 
     @Override
     public @NotNull ResourceLocation getPluginUid() {
@@ -38,6 +39,9 @@ public class SlashBladeJeiPlugin implements IModPlugin {
     public void registerItemSubtypes(ISubtypeRegistration registration) {
         for (Item item : ForgeRegistries.ITEMS) {
             if (item instanceof ItemSlashBlade && item != mods.flammpfeil.slashblade.registry.SlashBladeItems.SLASHBLADE.get()) {
+                if (hasInterpreter(registration, item)) {
+                    continue;
+                }
                 try {
                     registration.registerSubtypeInterpreter(item, (stack, context) -> {
                         stack.getCapability(ItemSlashBlade.BLADESTATE).ifPresent(cap -> {
@@ -54,6 +58,20 @@ public class SlashBladeJeiPlugin implements IModPlugin {
             }
         }
     }
+
+    private boolean hasInterpreter(ISubtypeRegistration registration, Item item) {
+        try {
+            if (registration instanceof mezz.jei.library.load.registration.SubtypeRegistration internalReg) {
+                java.lang.reflect.Field mapField = internalReg.getInterpreters().getClass().getDeclaredField("map");
+                mapField.setAccessible(true);
+                java.util.Map<?, ?> map = (java.util.Map<?, ?>) mapField.get(internalReg.getInterpreters());
+                return map != null && map.containsKey(item);
+            }
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
 
     @Override
     public void registerVanillaCategoryExtensions(IVanillaCategoryExtensionRegistration registration) {

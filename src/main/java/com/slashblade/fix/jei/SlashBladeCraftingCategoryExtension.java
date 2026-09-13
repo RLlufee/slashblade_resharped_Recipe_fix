@@ -208,7 +208,7 @@ public class SlashBladeCraftingCategoryExtension implements ICraftingCategoryExt
                     list.add(copy);
                 }
             } else {
-                list.add(new ItemStack(SlashBladeItems.SLASHBLADE.get()));
+                list.add(createFallbackBlade(SlashBlade.prefix("slashblade")));
             }
         }
         return list;
@@ -217,29 +217,38 @@ public class SlashBladeCraftingCategoryExtension implements ICraftingCategoryExt
     private void attachRequestTooltip(IRecipeSlotBuilder slot, RequestDefinition request) {
         slot.addRichTooltipCallback((recipeSlotView, tooltip) -> {
             if (request.killCount() > 0) {
-                tooltip.add(Component.translatable("slashblade_resharped_fix.jei.req_kill", request.killCount())
+                tooltip.add(Component.translatable("slashblade_resharped_recipe_fix.jei.req_kill", request.killCount())
                         .withStyle(ChatFormatting.RED));
             }
             if (request.proudSoulCount() > 0) {
-                tooltip.add(Component.translatable("slashblade_resharped_fix.jei.req_proud_soul", request.proudSoulCount())
+                tooltip.add(Component.translatable("slashblade_resharped_recipe_fix.jei.req_proud_soul", request.proudSoulCount())
                         .withStyle(ChatFormatting.LIGHT_PURPLE));
             }
             if (request.refineCount() > 0) {
-                tooltip.add(Component.translatable("slashblade_resharped_fix.jei.req_refine", request.refineCount())
+                tooltip.add(Component.translatable("slashblade_resharped_recipe_fix.jei.req_refine", request.refineCount())
                         .withStyle(ChatFormatting.AQUA));
             }
             for (EnchantmentDefinition enchDef : request.enchantments()) {
                 Enchantment ench = ForgeRegistries.ENCHANTMENTS.getValue(enchDef.getEnchantmentID());
                 if (ench != null) {
-                    tooltip.add(Component.translatable("slashblade_resharped_fix.jei.req_enchantment", ench.getFullname(enchDef.getEnchantmentLevel()))
+                    tooltip.add(Component.translatable("slashblade_resharped_recipe_fix.jei.req_enchantment", ench.getFullname(enchDef.getEnchantmentLevel()))
                             .withStyle(ChatFormatting.YELLOW));
                 }
             }
             for (SwordType type : request.defaultType()) {
-                tooltip.add(Component.translatable("slashblade_resharped_fix.jei.req_sword_type", type.name())
+                tooltip.add(Component.translatable("slashblade_resharped_recipe_fix.jei.req_sword_type", getSwordTypeName(type))
                         .withStyle(ChatFormatting.GOLD));
             }
         });
+    }
+
+    private static Component getSwordTypeName(SwordType type) {
+        return switch (type) {
+            case BEWITCHED -> Component.translatable("slashblade.sword_type.bewitched");
+            case ENCHANTED -> Component.translatable("slashblade.sword_type.enchanted");
+            case SEALED -> Component.translatable("slashblade.sword_type.noname");
+            default -> Component.literal(type.name());
+        };
     }
 
     private static int getCraftingIndex(int i, int width, int height) {
