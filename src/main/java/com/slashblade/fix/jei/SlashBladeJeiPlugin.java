@@ -45,10 +45,35 @@ public class SlashBladeJeiPlugin implements IModPlugin {
         for (Item item : BuiltInRegistries.ITEM) {
             if (item instanceof ItemSlashBlade && item != defaultBlade) {
                 try {
-                    registration.registerSubtypeInterpreter(item, mods.flammpfeil.slashblade.compat.jei.SlashBladeSubtypeInterpreter.INSTANCE);
+                    registration.registerSubtypeInterpreter(item, EnhancedSlashBladeSubtypeInterpreter.INSTANCE);
                 } catch (Throwable ignored) {
                 }
             }
+        }
+    }
+
+    /**
+     * 拔刀剑通用子类型解释器：直接使用 translationKey 进行唯一标识，
+     * 保证与原版 SlashBladeSubtypeInterpreter 完全一致，避免因封刀/妖刀状态导致配方材料无法匹配。
+     */
+    public static class EnhancedSlashBladeSubtypeInterpreter implements mezz.jei.api.ingredients.subtypes.ISubtypeInterpreter<ItemStack> {
+        public static final EnhancedSlashBladeSubtypeInterpreter INSTANCE = new EnhancedSlashBladeSubtypeInterpreter();
+
+        @Override
+        public Object getSubtypeData(ItemStack ingredient, mezz.jei.api.ingredients.subtypes.UidContext context) {
+            return BladeStateAccess.of(ingredient).map(state -> {
+                String key = state.getTranslationKey();
+                if (key == null || key.isEmpty()) {
+                    return "";
+                }
+                return key;
+            }).orElse("");
+        }
+
+        @Override
+        public String getLegacyStringSubtypeInfo(ItemStack ingredient, mezz.jei.api.ingredients.subtypes.UidContext context) {
+            Object data = getSubtypeData(ingredient, context);
+            return data != null ? data.toString() : "";
         }
     }
 

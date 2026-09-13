@@ -135,7 +135,7 @@ dependencies {
     compileOnly "mezz.jei:jei-${minecraft_version}-neoforge-api:${jei_version}"
     localRuntime "mezz.jei:jei-${minecraft_version}-neoforge:${jei_version}"
 
-    implementation files("libs/SlashBladeResharped-2.0.5-1.21.1.jar")
+    implementation files("libs/SlashBladeResharped-2.0.7-1.21.1/SlashBladeResharped-2.0.7-1.21.1.jar")
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.
@@ -178,6 +178,10 @@ publishing {
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8' // Use the UTF-8 charset for Java compilation
+}
+
+tasks.withType(ProcessResources).configureEach {
+    filteringCharset = 'UTF-8'
 }
 
 // IDEA no longer automatically downloads sources/javadoc jars for dependencies, so we need to explicitly enable the behavior.

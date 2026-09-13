@@ -248,10 +248,19 @@ public class SlashBladeCraftingCategoryExtension implements ICraftingCategoryExt
                 }
             }
             for (SwordType type : request.defaultType()) {
-                tooltip.add(Component.translatable("slashblade_resharped_recipe_fix.jei.req_sword_type", type.name())
+                tooltip.add(Component.translatable("slashblade_resharped_recipe_fix.jei.req_sword_type", getSwordTypeName(type))
                         .withStyle(ChatFormatting.GOLD));
             }
         });
+    }
+
+    private static Component getSwordTypeName(SwordType type) {
+        return switch (type) {
+            case BEWITCHED -> Component.translatable("slashblade.sword_type.bewitched");
+            case ENCHANTED -> Component.translatable("slashblade.sword_type.enchanted");
+            case SEALED -> Component.translatable("slashblade.sword_type.noname");
+            default -> Component.literal(type.name());
+        };
     }
 
     private static int getCraftingIndex(int i, int width, int height) {
