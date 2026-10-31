@@ -113,6 +113,9 @@ sourceSets.main.resources { srcDir 'src/generated/resources' }
 
 repositories {
     maven {
+        url "https://libraries.minecraft.net/"
+    }
+    maven {
         url "https://cursemaven.com"
     }
     mavenCentral()
@@ -125,6 +128,9 @@ dependencies {
     // If the group id is "net.minecraft" and the artifact id is one of ["client",  "server", "joined"],
     // then special handling is done to allow a setup of a vanilla dependency without the use of an external repository.
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+
+    compileOnly "com.mojang:datafixerupper:6.0.8"
+    compileOnly "com.mojang:brigadier:1.0.18"
 
     // 依赖拔刀剑重铸版与JEI
     implementation fg.deobf("curse.maven:slashblade-resharped-1022428:8090912")
@@ -181,6 +187,9 @@ publishing {
         }
     }
     repositories {
+    maven {
+        url "https://libraries.minecraft.net/"
+    }
         maven {
             url "file://${project.projectDir}/mcmodsrepo"
         }

@@ -109,23 +109,31 @@ public class SlashBladeCraftingCategoryExtension implements ICraftingCategoryExt
 
     public ItemStack getOutputStack() {
         ResourceLocation outputBlade = recipe.getOutputBlade();
-        if (outputBlade == null) {
-            return recipe.getResultItem(RegistryAccess.EMPTY);
-        }
 
-        if (ForgeRegistries.ITEMS.containsKey(outputBlade)) {
-            Item item = ForgeRegistries.ITEMS.getValue(outputBlade);
-            if (item != null) {
-                return new ItemStack(item);
+        // 1. 优先尝试从拔刀剑定义注册表中获取权威成品（无论物理上是基底刀还是独立刀物品）
+        if (outputBlade != null && !outputBlade.equals(SlashBlade.prefix("none"))) {
+            ItemStack resolved = getBladeFromRegistry(outputBlade);
+            if (!resolved.isEmpty()) {
+                return resolved;
             }
         }
 
-        ItemStack resolved = getBladeFromRegistry(outputBlade);
-        if (!resolved.isEmpty()) {
-            return resolved;
+        // 2. 尝试从配方自身的 getResultItem 获取（兼容派生配方如 NRBladeShapedRecipe 等自主产物逻辑）
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            RegistryAccess access = mc.level != null ? mc.level.registryAccess()
+                    : (mc.getConnection() != null ? mc.getConnection().registryAccess() : RegistryAccess.EMPTY);
+            ItemStack result = recipe.getResultItem(access);
+            if (!result.isEmpty()) {
+                syncCapFromNbt(result);
+                ensureBladeStateInitialized(result, outputBlade);
+                return result;
+            }
+        } catch (Exception ignored) {
         }
 
-        return createFallbackBlade(outputBlade);
+        // 3. 权威定义与配方自主解析均未成功时的智能保底
+        return outputBlade != null ? createFallbackBlade(outputBlade) : ItemStack.EMPTY;
     }
 
     private ItemStack getBladeFromRegistry(ResourceLocation bladeName) {
@@ -159,13 +167,49 @@ public class SlashBladeCraftingCategoryExtension implements ICraftingCategoryExt
     }
 
     public static ItemStack createFallbackBlade(ResourceLocation bladeName) {
-        ItemStack blade = new ItemStack(SlashBladeItems.SLASHBLADE.get());
-        String translationKey = Util.makeDescriptionId("item", bladeName);
-        CompoundTag tag = blade.getOrCreateTagElement("bladeState");
-        tag.putString("translationKey", translationKey);
-        tag.putBoolean("isNonEmpty", true);
-        syncCapFromNbt(blade);
+        Item item = SlashBladeItems.SLASHBLADE.get();
+        if (bladeName != null && ForgeRegistries.ITEMS.containsKey(bladeName)) {
+            Item customItem = ForgeRegistries.ITEMS.getValue(bladeName);
+            if (customItem != null && customItem != net.minecraft.world.item.Items.AIR) {
+                item = customItem;
+            }
+        }
+        ItemStack blade = new ItemStack(item);
+        if (bladeName != null) {
+            String translationKey = Util.makeDescriptionId("item", bladeName);
+            CompoundTag tag = blade.getOrCreateTagElement("bladeState");
+            tag.putString("translationKey", translationKey);
+            tag.putBoolean("isNonEmpty", true);
+            syncCapFromNbt(blade);
+        }
         return blade;
+    }
+
+    private static void ensureBladeStateInitialized(ItemStack blade, @Nullable ResourceLocation bladeName) {
+        if (blade.isEmpty() || !(blade.getItem() instanceof ItemSlashBlade)) {
+            return;
+        }
+        syncCapFromNbt(blade);
+        boolean needsKey = blade.getCapability(ItemSlashBlade.BLADESTATE)
+                .map(cap -> {
+                    String key = cap.getTranslationKey();
+                    return key == null || key.isEmpty() || "item.slashblade.namedblade".equals(key);
+                })
+                .orElse(true);
+
+        if (needsKey) {
+            ResourceLocation targetId = bladeName;
+            if (targetId == null) {
+                targetId = ForgeRegistries.ITEMS.getKey(blade.getItem());
+            }
+            if (targetId != null) {
+                String translationKey = Util.makeDescriptionId("item", targetId);
+                CompoundTag tag = blade.getOrCreateTagElement("bladeState");
+                tag.putString("translationKey", translationKey);
+                tag.putBoolean("isNonEmpty", true);
+                syncCapFromNbt(blade);
+            }
+        }
     }
 
     private static void syncCapFromNbt(ItemStack blade) {
@@ -205,6 +249,9 @@ public class SlashBladeCraftingCategoryExtension implements ICraftingCategoryExt
                 for (ItemStack item : items) {
                     ItemStack copy = item.copy();
                     syncCapFromNbt(copy);
+                    if (copy.getItem() instanceof ItemSlashBlade) {
+                        ensureBladeStateInitialized(copy, null);
+                    }
                     list.add(copy);
                 }
             } else {

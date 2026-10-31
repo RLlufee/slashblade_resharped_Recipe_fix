@@ -147,10 +147,17 @@ public class EmiSlashBladeFix {
                 }
             }
         }
-        if (stack != null && stack.getItem() instanceof mods.flammpfeil.slashblade.item.ItemSlashBlade) {
-            return stack.getCapability(mods.flammpfeil.slashblade.item.ItemSlashBlade.BLADESTATE)
+        if (stack != null && stack.getItem() instanceof mods.flammpfeil.slashblade.item.ItemSlashBlade item) {
+            String capKey = stack.getCapability(mods.flammpfeil.slashblade.item.ItemSlashBlade.BLADESTATE)
                     .map(mods.flammpfeil.slashblade.capability.slashblade.ISlashBladeState::getTranslationKey)
                     .orElse("");
+            if (!capKey.isEmpty() && !"item.slashblade.namedblade".equals(capKey)) {
+                return capKey;
+            }
+            if (item != mods.flammpfeil.slashblade.registry.SlashBladeItems.SLASHBLADE.get()) {
+                return item.getDescriptionId(stack);
+            }
+            return capKey;
         }
         return "";
     }

@@ -50,8 +50,14 @@ public class SlashBladeJeiPlugin implements IModPlugin {
                             }
                         });
                         return stack.getCapability(ItemSlashBlade.BLADESTATE)
-                                .map(ISlashBladeState::getTranslationKey)
-                                .orElse("");
+                                .map(cap -> {
+                                    String key = cap.getTranslationKey();
+                                    if (key == null || key.isEmpty() || "item.slashblade.namedblade".equals(key)) {
+                                        return item.getDescriptionId(stack);
+                                    }
+                                    return key;
+                                })
+                                .orElseGet(() -> item.getDescriptionId(stack));
                     });
                 } catch (Throwable ignored) {
                 }
