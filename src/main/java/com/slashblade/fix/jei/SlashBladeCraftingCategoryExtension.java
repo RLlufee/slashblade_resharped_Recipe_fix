@@ -7,6 +7,7 @@ import mezz.jei.api.recipe.IFocusGroup;
 import mezz.jei.api.recipe.category.extensions.vanilla.crafting.ICraftingCategoryExtension;
 import mods.flammpfeil.slashblade.SlashBlade;
 import mods.flammpfeil.slashblade.capability.slashblade.BladeStateAccess;
+import mods.flammpfeil.slashblade.item.ItemSlashBlade;
 import mods.flammpfeil.slashblade.item.SwordType;
 import mods.flammpfeil.slashblade.recipe.RequestDefinition;
 import mods.flammpfeil.slashblade.recipe.SlashBladeIngredient;
@@ -24,6 +25,7 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.item.enchantment.Enchantment;
@@ -113,32 +115,32 @@ public class SlashBladeCraftingCategoryExtension implements ICraftingCategoryExt
 
     public ItemStack getOutputStack(SlashBladeShapedRecipe recipe) {
         ResourceLocation outputBlade = recipe.getOutputBlade();
-        if (outputBlade == null) {
+
+        // 1. 优先尝试从拔刀剑定义注册表中获取权威成品（无论物理上是基底刀还是独立刀物品）
+        if (outputBlade != null && !outputBlade.equals(SlashBlade.prefix("none"))) {
+            ItemStack resolved = getBladeFromRegistry(outputBlade);
+            if (!resolved.isEmpty()) {
+                return resolved;
+            }
+        }
+
+        // 2. 尝试从配方自身的 getResultItem 获取（兼容派生配方等自主产物逻辑）
+        try {
             Minecraft mc = Minecraft.getInstance();
             HolderLookup.Provider access = mc.level != null ? mc.level.registryAccess() :
                     (mc.getConnection() != null ? mc.getConnection().registryAccess() : null);
             if (access != null) {
-                try {
-                    return recipe.getResultItem(access);
-                } catch (Exception ignored) {
+                ItemStack result = recipe.getResultItem(access);
+                if (!result.isEmpty()) {
+                    ensureBladeStateInitialized(result, outputBlade);
+                    return result;
                 }
             }
-            return recipe.getResultStack().copy();
+        } catch (Exception ignored) {
         }
 
-        if (BuiltInRegistries.ITEM.containsKey(outputBlade)) {
-            Item item = BuiltInRegistries.ITEM.get(outputBlade);
-            if (item != null) {
-                return new ItemStack(item);
-            }
-        }
-
-        ItemStack resolved = getBladeFromRegistry(outputBlade);
-        if (!resolved.isEmpty()) {
-            return resolved;
-        }
-
-        return createFallbackBlade(outputBlade);
+        // 3. 权威定义与配方自主解析均未成功时的智能保底
+        return outputBlade != null ? createFallbackBlade(outputBlade) : recipe.getResultStack().copy();
     }
 
     private ItemStack getBladeFromRegistry(ResourceLocation bladeName) {
@@ -167,12 +169,47 @@ public class SlashBladeCraftingCategoryExtension implements ICraftingCategoryExt
     }
 
     public static ItemStack createFallbackBlade(ResourceLocation bladeName) {
-        ItemStack blade = new ItemStack(SlashBladeItems.SLASHBLADE.get());
-        BladeStateAccess.of(blade).ifPresent(state -> {
-            state.setNonEmpty();
-            state.setTranslationKey(Util.makeDescriptionId("item", bladeName));
-        });
+        Item item = SlashBladeItems.SLASHBLADE.get();
+        if (bladeName != null && BuiltInRegistries.ITEM.containsKey(bladeName)) {
+            Item customItem = BuiltInRegistries.ITEM.get(bladeName);
+            if (customItem != null && customItem != Items.AIR) {
+                item = customItem;
+            }
+        }
+        ItemStack blade = new ItemStack(item);
+        if (bladeName != null) {
+            BladeStateAccess.of(blade).ifPresent(state -> {
+                state.setNonEmpty();
+                state.setTranslationKey(Util.makeDescriptionId("item", bladeName));
+            });
+        }
         return blade;
+    }
+
+    private static void ensureBladeStateInitialized(ItemStack blade, @Nullable ResourceLocation bladeName) {
+        if (blade.isEmpty() || !(blade.getItem() instanceof ItemSlashBlade)) {
+            return;
+        }
+        boolean needsKey = BladeStateAccess.of(blade)
+                .map(state -> {
+                    String key = state.getTranslationKey();
+                    return key == null || key.isEmpty() || "item.slashblade.namedblade".equals(key);
+                })
+                .orElse(true);
+
+        if (needsKey) {
+            ResourceLocation targetId = bladeName;
+            if (targetId == null) {
+                targetId = BuiltInRegistries.ITEM.getKey(blade.getItem());
+            }
+            if (targetId != null) {
+                String translationKey = Util.makeDescriptionId("item", targetId);
+                BladeStateAccess.of(blade).ifPresent(state -> {
+                    state.setNonEmpty();
+                    state.setTranslationKey(translationKey);
+                });
+            }
+        }
     }
 
     @Nullable
@@ -213,7 +250,11 @@ public class SlashBladeCraftingCategoryExtension implements ICraftingCategoryExt
             ItemStack[] items = original.getItems();
             if (items.length > 0) {
                 for (ItemStack item : items) {
-                    list.add(item.copy());
+                    ItemStack copy = item.copy();
+                    if (copy.getItem() instanceof ItemSlashBlade) {
+                        ensureBladeStateInitialized(copy, null);
+                    }
+                    list.add(copy);
                 }
             } else {
                 list.add(new ItemStack(SlashBladeItems.SLASHBLADE.get()));

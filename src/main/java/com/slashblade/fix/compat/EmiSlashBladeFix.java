@@ -4,6 +4,7 @@ import com.slashblade.fix.SlashBladeResharpedRecipeFix;
 import mods.flammpfeil.slashblade.capability.slashblade.BladeStateAccess;
 import mods.flammpfeil.slashblade.capability.slashblade.ISlashBladeState;
 import mods.flammpfeil.slashblade.item.ItemSlashBlade;
+import mods.flammpfeil.slashblade.registry.SlashBladeItems;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.fml.ModList;
 import net.neoforged.fml.loading.LoadingModList;
@@ -123,28 +124,13 @@ public class EmiSlashBladeFix {
                 return ItemStack.matches(stackA, stackB);
             }
 
-            Optional<ISlashBladeState> optA = BladeStateAccess.of(stackA);
-            Optional<ISlashBladeState> optB = BladeStateAccess.of(stackB);
+            String keyA = getBladeKey(stackA);
+            String keyB = getBladeKey(stackB);
 
-            // 如果双方都没有状态数据，按同一物品处理
-            if (optA.isEmpty() && optB.isEmpty()) {
-                return true;
-            }
-            // 一方有状态另一方无状态，绝不相等
-            if (optA.isEmpty() || optB.isEmpty()) {
-                return false;
-            }
+            boolean hasKeyA = !keyA.isEmpty();
+            boolean hasKeyB = !keyB.isEmpty();
 
-            ISlashBladeState stateA = optA.get();
-            ISlashBladeState stateB = optB.get();
-
-            String keyA = stateA.getTranslationKey();
-            String keyB = stateB.getTranslationKey();
-
-            boolean hasKeyA = keyA != null && !keyA.isEmpty();
-            boolean hasKeyB = keyB != null && !keyB.isEmpty();
-
-            // 1. 如果双方都指定了名刀 translationKey，严格按原版拔刀剑核心标识比对
+            // 1. 如果双方都指定了名刀 translationKey（或独立注册刀的 descriptionId），严格按名刀标识比对
             // 不得过度比对 isBroken、isSealed、Model 或 Texture，避免妖刀（有附魔）与默认封刀模板无法匹配
             if (hasKeyA && hasKeyB) {
                 return Objects.equals(keyA, keyB);
@@ -161,5 +147,19 @@ public class EmiSlashBladeFix {
             // 异常安全沙盒：绝不向外抛出异常，防止 EMI 触发 disabling 机制将比较器全局禁用
             return false;
         }
+    }
+
+    private static String getBladeKey(ItemStack stack) {
+        Optional<ISlashBladeState> opt = BladeStateAccess.of(stack);
+        if (opt.isPresent()) {
+            String key = opt.get().getTranslationKey();
+            if (key != null && !key.isEmpty() && !"item.slashblade.namedblade".equals(key)) {
+                return key;
+            }
+        }
+        if (stack.getItem() != SlashBladeItems.SLASHBLADE.get()) {
+            return stack.getItem().getDescriptionId(stack);
+        }
+        return "";
     }
 }

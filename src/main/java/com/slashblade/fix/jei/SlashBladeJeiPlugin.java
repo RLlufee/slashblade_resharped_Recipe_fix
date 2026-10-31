@@ -53,21 +53,24 @@ public class SlashBladeJeiPlugin implements IModPlugin {
     }
 
     /**
-     * 拔刀剑通用子类型解释器：直接使用 translationKey 进行唯一标识，
-     * 保证与原版 SlashBladeSubtypeInterpreter 完全一致，避免因封刀/妖刀状态导致配方材料无法匹配。
+     * 拔刀剑通用子类型解释器：
+     * 1. 优先使用 translationKey 进行唯一标识，保证与原版 SlashBladeSubtypeInterpreter 完全一致；
+     * 2. 若 translationKey 为空或未初始化的默认值，且物品为独立注册刀，则平滑回退至 item.getDescriptionId(ingredient)，
+     *    防止独立注册刀因缺少 NBT/State 导致配方与物品列表子类型失配而从 JEI 中消失。
      */
     public static class EnhancedSlashBladeSubtypeInterpreter implements mezz.jei.api.ingredients.subtypes.ISubtypeInterpreter<ItemStack> {
         public static final EnhancedSlashBladeSubtypeInterpreter INSTANCE = new EnhancedSlashBladeSubtypeInterpreter();
 
         @Override
         public Object getSubtypeData(ItemStack ingredient, mezz.jei.api.ingredients.subtypes.UidContext context) {
+            Item item = ingredient.getItem();
             return BladeStateAccess.of(ingredient).map(state -> {
                 String key = state.getTranslationKey();
-                if (key == null || key.isEmpty()) {
-                    return "";
+                if (key == null || key.isEmpty() || "item.slashblade.namedblade".equals(key)) {
+                    return item != SlashBladeItems.SLASHBLADE.get() ? item.getDescriptionId(ingredient) : "";
                 }
                 return key;
-            }).orElse("");
+            }).orElseGet(() -> item != SlashBladeItems.SLASHBLADE.get() ? item.getDescriptionId(ingredient) : "");
         }
 
         @Override
